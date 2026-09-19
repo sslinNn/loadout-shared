@@ -9,7 +9,7 @@ import type { InstalledItem, Machine } from "./schemas.js";
 export type InstalledItemRow = {
     id: string;
     machine_id: string;
-    tool: InstalledItem["tool"];
+    harnesses: string[];
     kind: InstalledItem["kind"];
     name: string;
     enabled: boolean;
@@ -18,6 +18,7 @@ export type InstalledItemRow = {
     project_path: string | null;
     source_type: InstalledItem["sourceType"];
     source_ref: string | null;
+    source_subdir: string | null;
     content_backup_id: string | null;
     last_synced_at: string;
 };

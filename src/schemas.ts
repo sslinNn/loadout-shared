@@ -1,30 +1,59 @@
 import { z } from "zod";
 
-export const ToolSchema = z.enum(["claude_code", "codex"]);
+/** Known coding-agent harnesses Loadout can project skills/MCP onto. */
+export const HARNESS_IDS = ["claude_code", "codex", "cursor", "gemini_cli", "copilot"] as const;
+export const HarnessSchema = z.enum(HARNESS_IDS);
+export type HarnessId = (typeof HARNESS_IDS)[number];
+
 export const KindSchema = z.enum(["skill", "mcp"]);
 export const ScopeSchema = z.enum(["global", "project"]);
 export const SourceTypeSchema = z.enum(["manual", "git", "npm", "marketplace"]);
 
-export const InstalledItemSchema = z
-  .object({
-    id: z.string(),
-    machineId: z.string(),
-    tool: ToolSchema,
-    kind: KindSchema,
-    name: z.string().min(1),
-    enabled: z.boolean(),
-    path: z.string().min(1),
-    scope: ScopeSchema,
-    projectPath: z.string().nullable(),
-    sourceType: SourceTypeSchema,
-    sourceRef: z.string().nullable(),
-    contentBackupId: z.string().nullable(),
-    lastSyncedAt: z.string()
-  })
-  .refine((v) => (v.scope === "project" ? v.projectPath !== null : true), {
-    message: "projectPath is required when scope is 'project'",
-    path: ["projectPath"]
-  });
+/**
+ * Snapshot/restore used to send `{ tool: "codex" }`. New items send `harnesses`.
+ * Prefer the array when both are present; otherwise lift the legacy scalar.
+ */
+function withHarnesses(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj = { ...(raw as Record<string, unknown>) };
+  if (Array.isArray(obj.harnesses)) {
+    delete obj.tool;
+    return obj;
+  }
+  if (typeof obj.tool === "string") {
+    obj.harnesses = [obj.tool];
+    delete obj.tool;
+  }
+  return obj;
+}
+
+export const InstalledItemSchema = z.preprocess(
+  withHarnesses,
+  z
+    .object({
+      id: z.string(),
+      machineId: z.string(),
+      harnesses: z.array(z.string()),
+      kind: KindSchema,
+      name: z.string().min(1),
+      enabled: z.boolean(),
+      path: z.string().min(1),
+      scope: ScopeSchema,
+      projectPath: z.string().nullable(),
+      sourceType: SourceTypeSchema,
+      sourceRef: z.string().nullable(),
+      // Same meaning as the install command's sourceSubdir: where the skill lives inside
+      // a git repo (`skills/<name>/`). Scanners cannot observe this on disk; install writes
+      // it, snapshot upsert keeps it, restore reads it. Missing on older rows/snapshots.
+      sourceSubdir: z.string().nullable().default(null),
+      contentBackupId: z.string().nullable(),
+      lastSyncedAt: z.string()
+    })
+    .refine((v) => (v.scope === "project" ? v.projectPath !== null : true), {
+      message: "projectPath is required when scope is 'project'",
+      path: ["projectPath"]
+    })
+);
 
 export type InstalledItem = z.infer<typeof InstalledItemSchema>;
 
@@ -36,7 +65,9 @@ export const MachineSchema = z.object({
   agentVersion: z.string(),
   pairedAt: z.string(),
   lastSeenAt: z.string(),
-  status: z.enum(["online", "offline"])
+  status: z.enum(["online", "offline"]),
+  /** Harnesses whose config directory is present on this machine. Empty means unknown. */
+  presentHarnesses: z.array(z.string()).default([])
 });
 export type Machine = z.infer<typeof MachineSchema>;
 
@@ -51,7 +82,6 @@ export const RealtimeCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("remove"), itemId: z.string() }),
   z.object({
     type: z.literal("install"),
-    tool: ToolSchema,
     kind: KindSchema,
     scope: ScopeSchema,
     projectPath: z.string().nullable(),

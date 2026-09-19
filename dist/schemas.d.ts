@@ -1,12 +1,15 @@
 import { z } from "zod";
-export declare const ToolSchema: z.ZodEnum<["claude_code", "codex"]>;
+/** Known coding-agent harnesses Loadout can project skills/MCP onto. */
+export declare const HARNESS_IDS: readonly ["claude_code", "codex", "cursor", "gemini_cli", "copilot"];
+export declare const HarnessSchema: z.ZodEnum<["claude_code", "codex", "cursor", "gemini_cli", "copilot"]>;
+export type HarnessId = (typeof HARNESS_IDS)[number];
 export declare const KindSchema: z.ZodEnum<["skill", "mcp"]>;
 export declare const ScopeSchema: z.ZodEnum<["global", "project"]>;
 export declare const SourceTypeSchema: z.ZodEnum<["manual", "git", "npm", "marketplace"]>;
-export declare const InstalledItemSchema: z.ZodEffects<z.ZodObject<{
+export declare const InstalledItemSchema: z.ZodEffects<z.ZodEffects<z.ZodObject<{
     id: z.ZodString;
     machineId: z.ZodString;
-    tool: z.ZodEnum<["claude_code", "codex"]>;
+    harnesses: z.ZodArray<z.ZodString, "many">;
     kind: z.ZodEnum<["skill", "mcp"]>;
     name: z.ZodString;
     enabled: z.ZodBoolean;
@@ -15,65 +18,85 @@ export declare const InstalledItemSchema: z.ZodEffects<z.ZodObject<{
     projectPath: z.ZodNullable<z.ZodString>;
     sourceType: z.ZodEnum<["manual", "git", "npm", "marketplace"]>;
     sourceRef: z.ZodNullable<z.ZodString>;
+    sourceSubdir: z.ZodDefault<z.ZodNullable<z.ZodString>>;
     contentBackupId: z.ZodNullable<z.ZodString>;
     lastSyncedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
+    harnesses: string[];
     id: string;
     machineId: string;
-    tool: "claude_code" | "codex";
+    path: string;
     kind: "skill" | "mcp";
     name: string;
     enabled: boolean;
-    path: string;
     scope: "global" | "project";
     projectPath: string | null;
     sourceType: "manual" | "git" | "npm" | "marketplace";
     sourceRef: string | null;
+    sourceSubdir: string | null;
     contentBackupId: string | null;
     lastSyncedAt: string;
 }, {
+    harnesses: string[];
     id: string;
     machineId: string;
-    tool: "claude_code" | "codex";
+    path: string;
     kind: "skill" | "mcp";
     name: string;
     enabled: boolean;
-    path: string;
     scope: "global" | "project";
     projectPath: string | null;
     sourceType: "manual" | "git" | "npm" | "marketplace";
     sourceRef: string | null;
     contentBackupId: string | null;
     lastSyncedAt: string;
+    sourceSubdir?: string | null | undefined;
 }>, {
+    harnesses: string[];
     id: string;
     machineId: string;
-    tool: "claude_code" | "codex";
+    path: string;
     kind: "skill" | "mcp";
     name: string;
     enabled: boolean;
-    path: string;
     scope: "global" | "project";
     projectPath: string | null;
     sourceType: "manual" | "git" | "npm" | "marketplace";
     sourceRef: string | null;
+    sourceSubdir: string | null;
     contentBackupId: string | null;
     lastSyncedAt: string;
 }, {
+    harnesses: string[];
     id: string;
     machineId: string;
-    tool: "claude_code" | "codex";
+    path: string;
     kind: "skill" | "mcp";
     name: string;
     enabled: boolean;
-    path: string;
     scope: "global" | "project";
     projectPath: string | null;
     sourceType: "manual" | "git" | "npm" | "marketplace";
     sourceRef: string | null;
     contentBackupId: string | null;
     lastSyncedAt: string;
-}>;
+    sourceSubdir?: string | null | undefined;
+}>, {
+    harnesses: string[];
+    id: string;
+    machineId: string;
+    path: string;
+    kind: "skill" | "mcp";
+    name: string;
+    enabled: boolean;
+    scope: "global" | "project";
+    projectPath: string | null;
+    sourceType: "manual" | "git" | "npm" | "marketplace";
+    sourceRef: string | null;
+    sourceSubdir: string | null;
+    contentBackupId: string | null;
+    lastSyncedAt: string;
+}, unknown>;
 export type InstalledItem = z.infer<typeof InstalledItemSchema>;
 export declare const MachineSchema: z.ZodObject<{
     id: z.ZodString;
@@ -84,6 +107,8 @@ export declare const MachineSchema: z.ZodObject<{
     pairedAt: z.ZodString;
     lastSeenAt: z.ZodString;
     status: z.ZodEnum<["online", "offline"]>;
+    /** Harnesses whose config directory is present on this machine. Empty means unknown. */
+    presentHarnesses: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
 }, "strip", z.ZodTypeAny, {
     id: string;
     status: "online" | "offline";
@@ -93,6 +118,7 @@ export declare const MachineSchema: z.ZodObject<{
     agentVersion: string;
     pairedAt: string;
     lastSeenAt: string;
+    presentHarnesses: string[];
 }, {
     id: string;
     status: "online" | "offline";
@@ -102,14 +128,15 @@ export declare const MachineSchema: z.ZodObject<{
     agentVersion: string;
     pairedAt: string;
     lastSeenAt: string;
+    presentHarnesses?: string[] | undefined;
 }>;
 export type Machine = z.infer<typeof MachineSchema>;
 export declare const SnapshotSchema: z.ZodObject<{
     machineId: z.ZodString;
-    items: z.ZodArray<z.ZodEffects<z.ZodObject<{
+    items: z.ZodArray<z.ZodEffects<z.ZodEffects<z.ZodObject<{
         id: z.ZodString;
         machineId: z.ZodString;
-        tool: z.ZodEnum<["claude_code", "codex"]>;
+        harnesses: z.ZodArray<z.ZodString, "many">;
         kind: z.ZodEnum<["skill", "mcp"]>;
         name: z.ZodString;
         enabled: z.ZodBoolean;
@@ -118,99 +145,106 @@ export declare const SnapshotSchema: z.ZodObject<{
         projectPath: z.ZodNullable<z.ZodString>;
         sourceType: z.ZodEnum<["manual", "git", "npm", "marketplace"]>;
         sourceRef: z.ZodNullable<z.ZodString>;
+        sourceSubdir: z.ZodDefault<z.ZodNullable<z.ZodString>>;
         contentBackupId: z.ZodNullable<z.ZodString>;
         lastSyncedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
+        sourceSubdir: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
     }, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
+        sourceSubdir?: string | null | undefined;
     }>, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
+        sourceSubdir: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
     }, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
-    }>, "many">;
+        sourceSubdir?: string | null | undefined;
+    }>, {
+        harnesses: string[];
+        id: string;
+        machineId: string;
+        path: string;
+        kind: "skill" | "mcp";
+        name: string;
+        enabled: boolean;
+        scope: "global" | "project";
+        projectPath: string | null;
+        sourceType: "manual" | "git" | "npm" | "marketplace";
+        sourceRef: string | null;
+        sourceSubdir: string | null;
+        contentBackupId: string | null;
+        lastSyncedAt: string;
+    }, unknown>, "many">;
 }, "strip", z.ZodTypeAny, {
     machineId: string;
     items: {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
+        sourceSubdir: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
     }[];
 }, {
     machineId: string;
-    items: {
-        id: string;
-        machineId: string;
-        tool: "claude_code" | "codex";
-        kind: "skill" | "mcp";
-        name: string;
-        enabled: boolean;
-        path: string;
-        scope: "global" | "project";
-        projectPath: string | null;
-        sourceType: "manual" | "git" | "npm" | "marketplace";
-        sourceRef: string | null;
-        contentBackupId: string | null;
-        lastSyncedAt: string;
-    }[];
+    items: unknown[];
 }>;
 export type Snapshot = z.infer<typeof SnapshotSchema>;
 export declare const RealtimeCommandSchema: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
@@ -218,12 +252,12 @@ export declare const RealtimeCommandSchema: z.ZodDiscriminatedUnion<"type", [z.Z
     itemId: z.ZodString;
     enabled: z.ZodBoolean;
 }, "strip", z.ZodTypeAny, {
-    enabled: boolean;
     type: "toggle";
+    enabled: boolean;
     itemId: string;
 }, {
-    enabled: boolean;
     type: "toggle";
+    enabled: boolean;
     itemId: string;
 }>, z.ZodObject<{
     type: z.ZodLiteral<"remove">;
@@ -236,7 +270,6 @@ export declare const RealtimeCommandSchema: z.ZodDiscriminatedUnion<"type", [z.Z
     itemId: string;
 }>, z.ZodObject<{
     type: z.ZodLiteral<"install">;
-    tool: z.ZodEnum<["claude_code", "codex"]>;
     kind: z.ZodEnum<["skill", "mcp"]>;
     scope: z.ZodEnum<["global", "project"]>;
     projectPath: z.ZodNullable<z.ZodString>;
@@ -245,31 +278,29 @@ export declare const RealtimeCommandSchema: z.ZodDiscriminatedUnion<"type", [z.Z
     sourceSubdir: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     listingId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
-    tool: "claude_code" | "codex";
+    type: "install";
     kind: "skill" | "mcp";
     scope: "global" | "project";
     projectPath: string | null;
     sourceType: "manual" | "git" | "npm" | "marketplace";
     sourceRef: string;
-    type: "install";
     sourceSubdir?: string | null | undefined;
     listingId?: string | null | undefined;
 }, {
-    tool: "claude_code" | "codex";
+    type: "install";
     kind: "skill" | "mcp";
     scope: "global" | "project";
     projectPath: string | null;
     sourceType: "manual" | "git" | "npm" | "marketplace";
     sourceRef: string;
-    type: "install";
     sourceSubdir?: string | null | undefined;
     listingId?: string | null | undefined;
 }>, z.ZodObject<{
     type: z.ZodLiteral<"restore">;
-    items: z.ZodArray<z.ZodEffects<z.ZodObject<{
+    items: z.ZodArray<z.ZodEffects<z.ZodEffects<z.ZodObject<{
         id: z.ZodString;
         machineId: z.ZodString;
-        tool: z.ZodEnum<["claude_code", "codex"]>;
+        harnesses: z.ZodArray<z.ZodString, "many">;
         kind: z.ZodEnum<["skill", "mcp"]>;
         name: z.ZodString;
         enabled: z.ZodBoolean;
@@ -278,98 +309,105 @@ export declare const RealtimeCommandSchema: z.ZodDiscriminatedUnion<"type", [z.Z
         projectPath: z.ZodNullable<z.ZodString>;
         sourceType: z.ZodEnum<["manual", "git", "npm", "marketplace"]>;
         sourceRef: z.ZodNullable<z.ZodString>;
+        sourceSubdir: z.ZodDefault<z.ZodNullable<z.ZodString>>;
         contentBackupId: z.ZodNullable<z.ZodString>;
         lastSyncedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
+        sourceSubdir: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
     }, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
+        sourceSubdir?: string | null | undefined;
     }>, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
+        sourceSubdir: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
     }, {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
-    }>, "many">;
+        sourceSubdir?: string | null | undefined;
+    }>, {
+        harnesses: string[];
+        id: string;
+        machineId: string;
+        path: string;
+        kind: "skill" | "mcp";
+        name: string;
+        enabled: boolean;
+        scope: "global" | "project";
+        projectPath: string | null;
+        sourceType: "manual" | "git" | "npm" | "marketplace";
+        sourceRef: string | null;
+        sourceSubdir: string | null;
+        contentBackupId: string | null;
+        lastSyncedAt: string;
+    }, unknown>, "many">;
 }, "strip", z.ZodTypeAny, {
     type: "restore";
     items: {
+        harnesses: string[];
         id: string;
         machineId: string;
-        tool: "claude_code" | "codex";
+        path: string;
         kind: "skill" | "mcp";
         name: string;
         enabled: boolean;
-        path: string;
         scope: "global" | "project";
         projectPath: string | null;
         sourceType: "manual" | "git" | "npm" | "marketplace";
         sourceRef: string | null;
+        sourceSubdir: string | null;
         contentBackupId: string | null;
         lastSyncedAt: string;
     }[];
 }, {
     type: "restore";
-    items: {
-        id: string;
-        machineId: string;
-        tool: "claude_code" | "codex";
-        kind: "skill" | "mcp";
-        name: string;
-        enabled: boolean;
-        path: string;
-        scope: "global" | "project";
-        projectPath: string | null;
-        sourceType: "manual" | "git" | "npm" | "marketplace";
-        sourceRef: string | null;
-        contentBackupId: string | null;
-        lastSyncedAt: string;
-    }[];
+    items: unknown[];
 }>]>;
 export type RealtimeCommand = z.infer<typeof RealtimeCommandSchema>;

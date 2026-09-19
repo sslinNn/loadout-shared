@@ -1,8 +1,15 @@
+function harnessesFromRow(row) {
+    if (Array.isArray(row.harnesses))
+        return row.harnesses.map(String);
+    if (typeof row.tool === "string" && row.tool.length > 0)
+        return [row.tool];
+    return [];
+}
 export function toInstalledItemRow(item) {
     return {
         id: item.id,
         machine_id: item.machineId,
-        tool: item.tool,
+        harnesses: item.harnesses,
         kind: item.kind,
         name: item.name,
         enabled: item.enabled,
@@ -11,6 +18,7 @@ export function toInstalledItemRow(item) {
         project_path: item.projectPath,
         source_type: item.sourceType,
         source_ref: item.sourceRef,
+        source_subdir: item.sourceSubdir ?? null,
         content_backup_id: item.contentBackupId,
         last_synced_at: item.lastSyncedAt
     };
@@ -19,7 +27,7 @@ export function toInstalledItem(row) {
     return {
         id: row.id,
         machineId: row.machine_id,
-        tool: row.tool,
+        harnesses: harnessesFromRow(row),
         kind: row.kind,
         name: row.name,
         enabled: row.enabled,
@@ -28,6 +36,7 @@ export function toInstalledItem(row) {
         projectPath: row.project_path ?? null,
         sourceType: row.source_type,
         sourceRef: row.source_ref ?? null,
+        sourceSubdir: row.source_subdir ?? null,
         contentBackupId: row.content_backup_id ?? null,
         lastSyncedAt: row.last_synced_at
     };
@@ -41,6 +50,7 @@ export function toMachine(row) {
         agentVersion: row.agent_version,
         pairedAt: row.paired_at,
         lastSeenAt: row.last_seen_at,
-        status: row.status
+        status: row.status,
+        presentHarnesses: Array.isArray(row.present_harnesses) ? row.present_harnesses.map(String) : []
     };
 }
