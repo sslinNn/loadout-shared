@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toInstalledItem, toInstalledItemRow, toMachine } from "../src/rows";
+import { toInstalledItem, toInstalledItemRow, toMachine, toMachineCommand } from "../src/rows";
 import type { InstalledItem } from "../src/schemas";
 
 const item: InstalledItem = {
@@ -15,6 +15,7 @@ const item: InstalledItem = {
   sourceType: "manual",
   sourceRef: null,
   sourceSubdir: null,
+  sourceCommit: null,
   contentBackupId: null,
   lastSyncedAt: "2026-01-01T00:00:00.000Z"
 };
@@ -98,5 +99,37 @@ describe("toMachine", () => {
         status: "online"
       }).presentHarnesses
     ).toEqual([]);
+  });
+});
+
+describe("source_commit", () => {
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+  it("round-trips through the row", () => {
+    const row = toInstalledItemRow({ ...item, sourceType: "git", sourceRef: "https://github.com/o/r", sourceCommit: sha });
+    expect(row.source_commit).toBe(sha);
+    expect(toInstalledItem(row as unknown as Record<string, unknown>).sourceCommit).toBe(sha);
+  });
+  it("reads a missing column as null", () => {
+    const { source_commit: _dropped, ...legacy } = toInstalledItemRow(item);
+    expect(toInstalledItem(legacy as unknown as Record<string, unknown>).sourceCommit).toBeNull();
+  });
+});
+
+describe("toMachineCommand", () => {
+  const row = {
+    id: "c1",
+    machine_id: "m1",
+    command: { type: "toggle", itemId: "x", enabled: false },
+    status: "pending",
+    detail: null,
+    created_at: "2026-10-03T00:00:00Z",
+    updated_at: "2026-10-03T00:00:00Z",
+    expires_at: "2026-10-04T00:00:00Z"
+  };
+  it("maps a queued command", () => {
+    expect(toMachineCommand(row)).toMatchObject({ id: "c1", machineId: "m1", status: "pending", command: { type: "toggle" } });
+  });
+  it("refuses a payload the command schema would refuse", () => {
+    expect(toMachineCommand({ ...row, command: { type: "rm -rf", path: "/" } })).toBeNull();
   });
 });

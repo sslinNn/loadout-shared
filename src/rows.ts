@@ -1,4 +1,4 @@
-import type { InstalledItem, Machine } from "./schemas.js";
+import { RealtimeCommandSchema, type InstalledItem, type Machine, type MachineCommand } from "./schemas.js";
 
 /**
  * PostgREST returns snake_case columns; shared types are camelCase. Every read/write that
@@ -21,6 +21,7 @@ export type InstalledItemRow = {
   source_type: InstalledItem["sourceType"];
   source_ref: string | null;
   source_subdir: string | null;
+  source_commit: string | null;
   content_backup_id: string | null;
   last_synced_at: string;
 };
@@ -45,6 +46,7 @@ export function toInstalledItemRow(item: InstalledItem): InstalledItemRow {
     source_type: item.sourceType,
     source_ref: item.sourceRef,
     source_subdir: item.sourceSubdir ?? null,
+    source_commit: item.sourceCommit ?? null,
     content_backup_id: item.contentBackupId,
     last_synced_at: item.lastSyncedAt
   };
@@ -64,6 +66,7 @@ export function toInstalledItem(row: Record<string, unknown>): InstalledItem {
     sourceType: row.source_type as InstalledItem["sourceType"],
     sourceRef: (row.source_ref as string | null) ?? null,
     sourceSubdir: (row.source_subdir as string | null) ?? null,
+    sourceCommit: (row.source_commit as string | null) ?? null,
     contentBackupId: (row.content_backup_id as string | null) ?? null,
     lastSyncedAt: row.last_synced_at as string
   };
@@ -80,5 +83,25 @@ export function toMachine(row: Record<string, unknown>): Machine {
     lastSeenAt: row.last_seen_at as string,
     status: row.status as Machine["status"],
     presentHarnesses: Array.isArray(row.present_harnesses) ? row.present_harnesses.map(String) : []
+  };
+}
+
+/**
+ * A `machine_commands` row. The command payload is re-validated rather than cast: it is jsonb
+ * written by a browser, and the agent must never act on a shape the schema would refuse.
+ * Returns null for a row whose command does not parse.
+ */
+export function toMachineCommand(row: Record<string, unknown>): MachineCommand | null {
+  const command = RealtimeCommandSchema.safeParse(row.command);
+  if (!command.success) return null;
+  return {
+    id: row.id as string,
+    machineId: row.machine_id as string,
+    command: command.data,
+    status: row.status as MachineCommand["status"],
+    detail: (row.detail as string | null) ?? null,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    expiresAt: row.expires_at as string
   };
 }

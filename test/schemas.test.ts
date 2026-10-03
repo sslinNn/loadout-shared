@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { InstalledItemSchema, MachineSchema, RealtimeCommandSchema, SnapshotSchema } from "../src/schemas";
+import {
+  InstalledItemSchema,
+  MachineSchema,
+  RealtimeCommandSchema,
+  SnapshotSchema,
+  agentSupportsQueue,
+  isFinalCommandStatus
+} from "../src/schemas";
 
 const baseItem = {
   id: "skill:global:/home/user/.agents/skills/data-visualization",
@@ -14,6 +21,7 @@ const baseItem = {
   sourceType: "manual",
   sourceRef: null,
   sourceSubdir: null,
+  sourceCommit: null,
   contentBackupId: null,
   lastSyncedAt: "2026-09-02T00:00:00.000Z"
 } as const;
@@ -116,5 +124,50 @@ describe("RealtimeCommandSchema install", () => {
     });
     expect(parsed.type).toBe("install");
     expect(parsed).not.toHaveProperty("tool");
+  });
+});
+
+describe("sourceCommit", () => {
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+  const install = {
+    type: "install",
+    kind: "skill",
+    scope: "global",
+    projectPath: null,
+    sourceType: "git",
+    sourceRef: "https://github.com/o/r"
+  } as const;
+
+  it("defaults to null on an item written before it existed", () => {
+    const { sourceCommit: _omit, ...older } = baseItem;
+    expect(InstalledItemSchema.parse(older).sourceCommit).toBeNull();
+  });
+
+  it("rides an install command when given, and is optional", () => {
+    expect(RealtimeCommandSchema.parse({ ...install, sourceCommit: sha })).toMatchObject({ sourceCommit: sha });
+    expect(RealtimeCommandSchema.safeParse(install).success).toBe(true);
+  });
+
+  it("refuses anything that is not a full commit id", () => {
+    for (const bad of ["main", "HEAD", "0123456", `${sha}0`, "../../etc"]) {
+      expect(RealtimeCommandSchema.safeParse({ ...install, sourceCommit: bad }).success, bad).toBe(false);
+    }
+  });
+});
+
+describe("command queue", () => {
+  it("knows which agents read it", () => {
+    expect(agentSupportsQueue("0.1.3")).toBe(false);
+    expect(agentSupportsQueue("0.2.0")).toBe(true);
+    expect(agentSupportsQueue("0.10.0")).toBe(true);
+    expect(agentSupportsQueue("1.0.0-beta.1")).toBe(true);
+    expect(agentSupportsQueue("unknown")).toBe(false);
+  });
+
+  it("tells final states from in-flight ones", () => {
+    expect(isFinalCommandStatus("pending")).toBe(false);
+    expect(isFinalCommandStatus("awaiting_approval")).toBe(false);
+    expect(isFinalCommandStatus("denied")).toBe(true);
+    expect(isFinalCommandStatus("expired")).toBe(true);
   });
 });
