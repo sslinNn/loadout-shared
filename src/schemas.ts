@@ -9,6 +9,9 @@ export const KindSchema = z.enum(["skill", "mcp"]);
 export const ScopeSchema = z.enum(["global", "project"]);
 export const SourceTypeSchema = z.enum(["manual", "git", "npm", "marketplace"]);
 
+/** A full 40-character git commit id. */
+export const CommitShaSchema = z.string().regex(/^[0-9a-f]{40}$/, "expected a full 40-character commit id");
+
 /**
  * Snapshot/restore used to send `{ tool: "codex" }`. New items send `harnesses`.
  * Prefer the array when both are present; otherwise lift the legacy scalar.
@@ -46,6 +49,11 @@ export const InstalledItemSchema = z.preprocess(
       // a git repo (`skills/<name>/`). Scanners cannot observe this on disk; install writes
       // it, snapshot upsert keeps it, restore reads it. Missing on older rows/snapshots.
       sourceSubdir: z.string().nullable().default(null),
+      // The exact commit a git install checked out. The install command's sourceCommit when
+      // one was given (a reviewed listing pins one), otherwise whatever HEAD resolved to at
+      // install time — so a restore reproduces the same files rather than today's branch.
+      // Missing on older rows/snapshots.
+      sourceCommit: CommitShaSchema.nullable().default(null),
       contentBackupId: z.string().nullable(),
       lastSyncedAt: z.string()
     })
@@ -93,6 +101,10 @@ export const RealtimeCommandSchema = z.discriminatedUnion("type", [
     // this, only a repo whose root is a skill could ever be installed. Relative to the
     // repository root; null/omitted means "the root is the skill".
     sourceSubdir: z.string().nullish(),
+    // Check out exactly this commit instead of the default branch. A marketplace listing
+    // carries the commit its reviewer approved; installing anything else would install code
+    // nobody reviewed. Agents older than 0.2.0 strip the field and install HEAD.
+    sourceCommit: CommitShaSchema.nullish(),
     // Set when the install was triggered from a marketplace listing (see
     // apps/dashboard/lib/domain/listing.ts). The agent records it as an `installs`
     // row so the listing's install is attributable; omitted for a plain git/npm install
@@ -102,3 +114,66 @@ export const RealtimeCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("restore"), items: z.array(InstalledItemSchema) })
 ]);
 export type RealtimeCommand = z.infer<typeof RealtimeCommandSchema>;
+
+/**
+ * Lifecycle of a queued command (`machine_commands`). Broadcasts are fire-and-forget and
+ * lost when the agent is offline; a queued command waits for it and reports back.
+ *
+ *   pending ──claim──▶ running ──▶ awaiting_approval ──▶ done | failed | denied
+ *      │                                       (local confirmation, if the action needs one)
+ *      ├──▶ cancelled   (by the dashboard, while still pending)
+ *      └──▶ expired     (not picked up before expires_at)
+ */
+export const MACHINE_COMMAND_STATUSES = [
+  "pending",
+  "running",
+  "awaiting_approval",
+  "done",
+  "failed",
+  "denied",
+  "expired",
+  "cancelled"
+] as const;
+export const MachineCommandStatusSchema = z.enum(MACHINE_COMMAND_STATUSES);
+export type MachineCommandStatus = z.infer<typeof MachineCommandStatusSchema>;
+
+/** A status nothing will move on from. */
+export function isFinalCommandStatus(status: MachineCommandStatus): boolean {
+  return status === "done" || status === "failed" || status === "denied" || status === "expired" || status === "cancelled";
+}
+
+export const MachineCommandSchema = z.object({
+  id: z.string(),
+  machineId: z.string(),
+  command: RealtimeCommandSchema,
+  status: MachineCommandStatusSchema,
+  /** Why it failed or was denied, or a short note on what it did. */
+  detail: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  expiresAt: z.string()
+});
+export type MachineCommand = z.infer<typeof MachineCommandSchema>;
+
+/**
+ * The first agent release that drains `machine_commands`. Older agents only listen for
+ * broadcasts, so the dashboard keeps broadcasting to them (and keeps their controls disabled
+ * while they are offline).
+ */
+export const QUEUE_MIN_AGENT_VERSION = "0.2.0";
+
+function versionParts(version: string): [number, number, number] | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+
+/** Whether an agent reporting `agentVersion` reads the command queue. Unknown versions do not. */
+export function agentSupportsQueue(agentVersion: string): boolean {
+  const have = versionParts(agentVersion);
+  const need = versionParts(QUEUE_MIN_AGENT_VERSION)!;
+  if (!have) return false;
+  for (let i = 0; i < 3; i += 1) {
+    if (have[i] !== need[i]) return have[i] > need[i];
+  }
+  return true;
+}
